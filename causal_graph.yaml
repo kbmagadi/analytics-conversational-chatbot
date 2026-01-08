@@ -1,0 +1,26 @@
+metrics:
+  Activated Users:
+    causes:
+    - Signups
+    - Activation Rate
+  Activation Rate:
+    causes:
+    - Signups
+  Average Revenue Per User:
+    causes: []
+  Click Through Rate:
+    causes:
+    - Impressions
+  Clicks:
+    causes:
+    - Click Through Rate
+    - Impressions
+  Impressions:
+    causes: []
+  Revenue:
+    causes:
+    - Average Revenue Per User
+    - Activated Users
+  Signups:
+    causes:
+    - Clicks
