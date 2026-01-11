@@ -1,8 +1,7 @@
 # chatbot/intent_classifier.py
-
+from functools import lru_cache
 from enum import Enum
 from llm.ollama_client import call_llm
-
 
 class Intent(str, Enum):
     VALUE = "VALUE"             # single metric value
@@ -23,6 +22,7 @@ INTENTS:
 VALUE
 → Asking for the value of a single metric at a specific point in time
 → Examples: today, yesterday, day before yesterday
+→ NOT for future dates (use UNKNOWN for forecasts)
 
 COMPARISON
 → Comparing a single metric between two specific points in time
@@ -46,6 +46,8 @@ PERIOD_ROOT_CAUSE
 
 UNKNOWN
 → Anything that does not clearly fit the above categories
+→ Future projections, forecasts, predictions (e.g., "what will revenue be next week?")
+→ Vague queries without clear intent
 
 RULES:
 - Respond with ONLY the intent label
@@ -53,6 +55,7 @@ RULES:
 - Do NOT add punctuation
 - Do NOT add extra words
 - Choose the MOST specific intent
+- If query asks about future (will, next week, forecast), use UNKNOWN
 
 EXAMPLES:
 "What is revenue today?" → VALUE
@@ -76,12 +79,44 @@ EXAMPLES:
 "Why did last week perform worse?" → PERIOD_ROOT_CAUSE
 "What went wrong last week?" → PERIOD_ROOT_CAUSE
 
+"What will revenue be next week?" → UNKNOWN
+"Forecast orders for next month" → UNKNOWN
+"Predict traffic tomorrow" → UNKNOWN
 "How did we perform?" → UNKNOWN
 """
 
 def classify_intent(user_query: str) -> Intent:
     """
     Classifies user query into a predefined intent.
+    """
+    prompt = f"""
+{INTENT_PROMPT}
+
+User Question:
+{user_query}
+"""
+
+    try:
+        response = call_llm(
+            prompt=prompt,
+            temperature=0.0   # IMPORTANT: deterministic
+        )
+
+        intent_str = response.strip().upper()
+
+        if intent_str in Intent.__members__:
+            return Intent[intent_str]
+
+        return Intent.UNKNOWN
+
+    except Exception:
+        return Intent.UNKNOWN
+
+@lru_cache(maxsize=128)
+def classify_intent(user_query: str) -> Intent:
+    """
+    Classifies user query into a predefined intent.
+    Cached to avoid redundant LLM calls.
     """
     prompt = f"""
 {INTENT_PROMPT}

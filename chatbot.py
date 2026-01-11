@@ -6,6 +6,8 @@ from response_builder import build_response
 from data_store import MetricsStore
 from followups import suggest_followups
 from summary_context import SummaryContext
+from memory import ConversationMemory
+
 
 def run_chatbot():
     """
@@ -16,9 +18,23 @@ def run_chatbot():
     print("Ask questions about your metrics. Type 'exit' to quit.")
     print("=" * 60)
 
-    # Initialize dataset interface
+    # --------------------------------------------------
+    # Initialize core components (once per session)
+    # --------------------------------------------------
     metrics_store = MetricsStore()
     summary_ctx = SummaryContext(metrics_store)
+    memory = ConversationMemory()
+    print("\n📌 Loaded Summary Context (cached):")
+    print("-" * 40)
+
+    for metric, info in summary_ctx.get_summary().items():
+        direction = "up" if info["change_pct"] > 0 else "down"
+        print(
+            f"{metric}: {info['current']} "
+            f"({direction} {abs(info['change_pct'])}%)"
+        )
+
+    print("-" * 40)
 
 
     while True:
@@ -33,7 +49,7 @@ def run_chatbot():
                 break
 
             # --------------------------------------------------
-            # Step 1: Intent classification
+            # Step 1: Intent classification (LLM, shallow)
             # --------------------------------------------------
             intent = classify_intent(user_input)
             print("Intent:", intent)
@@ -47,18 +63,32 @@ def run_chatbot():
             )
 
             # --------------------------------------------------
-            # Step 3: Build grounded response
-            # (data retrieval + explanation)
+            # Step 3: Resolve follow-ups using memory (SAFE)
+            # --------------------------------------------------
+            resolved_plan = memory.resolve(intent, query_plan)
+
+            # --------------------------------------------------
+            # Step 4: Build grounded response
+            # (deterministic analytics + constrained LLM)
             # --------------------------------------------------
             response = build_response(
                 intent=intent,
-                query_plan=query_plan,
+                query_plan=resolved_plan,
                 metrics_store=metrics_store,
                 summary_context=summary_ctx
             )
 
             print(f"\nBot: {response}")
-            followups = suggest_followups(intent, query_plan)
+
+            # --------------------------------------------------
+            # Step 5: Update memory AFTER successful resolution
+            # --------------------------------------------------
+            memory.update(intent, resolved_plan)
+
+            # --------------------------------------------------
+            # Step 6: Suggested follow-ups
+            # --------------------------------------------------
+            followups = suggest_followups(intent, resolved_plan)
 
             if followups:
                 print("\nSuggested follow-ups:")
